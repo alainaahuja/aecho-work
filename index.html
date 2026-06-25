@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Chatbot</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #chatbox { width: 300px; height: 400px; border: 1px solid #ccc; padding: 10px; overflow-y: scroll; }
+        .message { margin-bottom: 10px; }
+        .user { color: blue; }
+        .bot { color: green; }
+        #microphone { cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Voice Chatbot</h1>
+    <div id="chatbox"></div>
+    <button id="microphone">🎤</button>
+    <script>
+        const microphoneButton = document.getElementById('microphone');
+        let isRecording = false;
+        let mediaRecorder;
+        let audioChunks = [];
+
+        microphoneButton.onclick = async function() {
+            if (!isRecording) {
+                isRecording = true;
+                microphoneButton.textContent = '🛑';
+                startRecording();
+            } else {
+                isRecording = false;
+                microphoneButton.textContent = '🎤';
+                stopRecording();
+            }
+        };
+
+        function startRecording() {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder.ondataavailable = event => {
+                        if (event.data.size > 0) {
+                            audioChunks.push(event.data);
+                            if (audioChunks.length>0) {
+                                sendAudio();
+                            }
+                        }
+                    };
+                    //mediaRecorder.onstop = sendAudio;
+                    mediaRecorder.start(3000);
+                });
+        }
+
+        function stopRecording() {
+            mediaRecorder.stop();
+        }
+
+        async function sendAudio() {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/mpeg' });
+            audioChunks = [];
+
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'audio.mp3');
+
+            console.log("Sending audio to backend");
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/chat', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                console.log("Response from backend:", data);
+
+                if (Array.isArray(data)) {
+                    data.forEach(message => {
+                        console.log("Processing message:", message.message);
+                        if (message.message && message.message.content) {
+                            //addMessageToChat('bot', message.message.content);
+                            //console.log("Calling speakMessage with:", message.message.content);
+                            speakMessage(message.message.content,message.message.role);
+                        }
+
+                        if (message.message && message.message.prosody) {
+                            sendDataToBackend(message.message.prosody);
+                        } 
+                    });
+                } else {
+                    console.error("Unexpected response format:", data);
+                }
+            } catch (error) {
+                console.error("Error sending audio to backend:", error);
+            }
+        }
+        
+        async function sendDataToBackend(analysisData) {
+            const analysis_data = {
+                analysis: analysisData
+            };
+
+            try {
+                const response = await fetch('http://127.0.0.1":5000/submit', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },body: JSON.stringify(analysis_data)
+                });
+
+                if (response.ok) {
+                    console.log('Prosody data submitted successfully');
+                } else {
+                    console.log('Prosody submission failed');
+                }
+            } catch (error) {
+                console.error('Error sending prosody to backend:', error);
+            }
+        }
+
+        function addMessageToChat(sender, message) {
+            console.log(`Adding message to chat from ${sender}:`, message);
+            const chatbox = document.getElementById('chatbox');
+            const messageElem = document.createElement('div');
+            messageElem.className = `message ${sender}`;
+            messageElem.textContent = message;
+            chatbox.appendChild(messageElem);
+            chatbox.scrollTop = chatbox.scrollHeight;
+        }
+
+        function speakMessage(message,role) {
+            console.log("Speaking message:", message);
+            if (role!='user') {
+                const utterance = new SpeechSynthesisUtterance(message);
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+    </script>
+</body>
+</html>
